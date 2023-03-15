@@ -15,11 +15,10 @@ Station=Base.classes.station
 #Defines 
 def oneyearago():
     session=Session(bind=engine)
-    recent_date=session.query(Measurement).order_by(Measurement.date.desc()).first()
-    recent_date=dt.datetime.strptime(recent_date.date,"%Y-%m-%d")
-    oneyearbefore=recent_date.replace(year=recent_date.year-1)
-    oyb_year=oneyearbefore.strftime("%Y-%m-%d")
-    return oyb_year
+    recent=session.query(func.max(Measurement.date)).scalar()
+    recent=dt.datetime.strptime(recent,"%Y-%m-%d")
+    oneyearbefore=recent.replace(year=recent.year-1).strftime("%Y-%m-%d")
+    return oneyearbefore
 
 @app.route("/")
 def home():
@@ -29,12 +28,12 @@ def home():
             /api/v1.0/stations</br>\
             /api/v1.0/tobs</br>\
             /api/v1.0/&lt;start&gt; or\
-            /&lt;start&gt;/&lt;end&gt;"
+            /&lt;start&gt;/&lt;end&gt; <i>Use date format:YYYY-MM-DD</i>"
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
     session=Session(bind=engine)
-    scores=session.query(Measurement.date,func.sum(Measurement.prcp)).group_by(Measurement.date).filter(Measurement.date>=oneyearago()).all()
+    scores=session.query(Measurement.date,Measurement.prcp).filter(Measurement.date>=oneyearago()).all()
     session.close()
     scores_dict={}
     for line in scores:
@@ -66,15 +65,17 @@ def tobs():
         tobs_dict[line[0]]=line[1]
     return jsonify(tobs_dict)
 
-@app.route("/api/v1.0/<start>")
-def dates(start,end=0):
+
+@app.route("/api/v1.0/<start>",defaults={"end":None})
+@app.route("/api/v1.0/<start>/<end>")
+def dates(start,end):
     session=Session(bind=engine)
     sel=[func.min(Measurement.tobs),
          func.avg(Measurement.tobs),
          func.max(Measurement.tobs),
          func.min(Measurement.date),
          func.max(Measurement.date)]
-    if end == 0:
+    if end == None:
         (TMIN,TAVG,TMAX,DMIN,DMAX)=session.query(*sel).filter(Measurement.date>=start).one()
     else:
         (TMIN,TAVG,TMAX,DMIN,DMAX)=session.query(*sel).filter(Measurement.date>=start).filter(Measurement.date<=end).one()
@@ -85,10 +86,6 @@ def dates(start,end=0):
                "Max_Temp":TMAX,
                "Avg_Temp":TAVG}
     return jsonify(temp_dict)
-
-@app.route("/api/v1.0/<start>/<end>")
-def dates_end(start,end):
-    return dates(start,end)
         
 
 if __name__=="__main__":
